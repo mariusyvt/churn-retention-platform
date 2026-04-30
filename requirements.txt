@@ -1,2 +1,5 @@
-notebook
-ipykernel
+pandas
+numpy
+scikit-learn
+joblib
+matplotlib
