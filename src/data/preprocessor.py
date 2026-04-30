@@ -78,7 +78,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def build_preprocessor(num_cols: list, cat_cols: list) -> ColumnTransformer:
     """
     Construit le ColumnTransformer.
-    ⚠️ À fitter uniquement sur le train set.
+     À fitter uniquement sur le train set.
     """
     numerical_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
@@ -126,7 +126,7 @@ def prepare_data(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 4
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    print(f"✅ Split : Train={X_train.shape[0]:,} | Test={X_test.shape[0]:,}")
+    print(f"Split : Train={X_train.shape[0]:,} | Test={X_test.shape[0]:,}")
     print(f"   Churn rate train : {y_train.mean():.3f} | test : {y_test.mean():.3f}")
 
     # 5. Fit sur train uniquement — jamais sur test !
@@ -148,7 +148,7 @@ def save_preprocessor(preprocessor, path: str = "models/preprocessor.pkl"):
     """Sauvegarde le preprocessor."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     joblib.dump(preprocessor, path)
-    print(f"💾 Preprocessor sauvegardé : {path}")
+    print(f" Preprocessor sauvegardé : {path}")
 
 
 if __name__ == "__main__":
