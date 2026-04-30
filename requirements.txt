@@ -1,16 +1,6 @@
 pandas
 numpy
 scikit-learn
-xgboost
-lightgbm
-imbalanced-learn
-shap
+joblib
 matplotlib
 seaborn
-fastapi
-uvicorn
-joblib
-requests
-pydantic
-pytest
-streamlit
