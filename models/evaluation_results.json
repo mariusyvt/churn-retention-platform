@@ -1,0 +1,38 @@
+[
+  {
+    "model": "Logistic Regression",
+    "optimal_threshold": 0.64,
+    "recall_default": 0.6422,
+    "recall_tuned": 0.4755,
+    "f1_default": 0.2974,
+    "f1_tuned": 0.3368,
+    "roc_auc": 0.7346
+  },
+  {
+    "model": "Random Forest",
+    "optimal_threshold": 0.3,
+    "recall_default": 0.1863,
+    "recall_tuned": 0.8039,
+    "f1_default": 0.219,
+    "f1_tuned": 0.3872,
+    "roc_auc": 0.7851
+  },
+  {
+    "model": "XGBoost",
+    "optimal_threshold": 0.1,
+    "recall_default": 0.0588,
+    "recall_tuned": 0.7647,
+    "f1_default": 0.1034,
+    "f1_tuned": 0.38,
+    "roc_auc": 0.7799
+  },
+  {
+    "model": "MLP (Deep Learning)",
+    "optimal_threshold": 0.09,
+    "recall_default": 0.2451,
+    "recall_tuned": 0.3284,
+    "f1_default": 0.2326,
+    "f1_tuned": 0.2607,
+    "roc_auc": 0.6533
+  }
+]
