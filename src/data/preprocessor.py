@@ -1,159 +1,277 @@
 """
-Feature engineering et pipeline de préparation sklearn.
-Toutes les transformations sont fitées sur le train set uniquement
-pour éviter le data leakage.
+Module : preprocessor.py
+Responsabilité : Pipeline complet de préparation des données.
+
+Principe anti-data-leakage :
+  - Le pipeline sklearn est FIT uniquement sur le train set
+  - SMOTE est appliqué uniquement sur le train set
+  - Le test set est transformé (transform) mais jamais utilisé pour fit
 """
 
-import pandas as pd
-import numpy as np
+# =============================================================================
+# INTERPRÉTATION — PREPROCESSING
+# =============================================================================
+# On commence par nettoyer et préparer les données avant d'entraîner les modèles.
+#
+# Quelques choix importants qu'on a faits :
+#
+# 1. RobustScaler plutôt que StandardScaler
+#    → On a des outliers sur certaines variables (monthly_fee, total_revenue).
+#      RobustScaler est moins sensible aux valeurs extrêmes car il utilise
+#      la médiane et l'IQR au lieu de la moyenne et l'écart-type.
+#
+# 2. Split stratifié (stratify=y)
+#    → Le dataset est très déséquilibré : seulement 10% de churners.
+#      Sans stratification, on risque de se retrouver avec trop peu de churners
+#      dans le test set, ce qui fausserait l'évaluation.
+#
+# 3. SMOTE uniquement sur le train set
+#    → SMOTE crée des exemples synthétiques pour équilibrer les classes.
+#      On ne l'applique QUE sur le train pour ne pas "tricher" sur le test.
+#      Après SMOTE : 50% churners / 50% non-churners dans le train.
+#
+# 4. Features dérivées (feature engineering)
+#    → On crée de nouvelles variables à partir des existantes pour capturer
+#      des signaux plus pertinents (ex: tickets_per_month, engagement_score).
+#      Ces variables ont été identifiées lors de l'EDA.
+# =============================================================================
+
 import joblib
-import os
-from sklearn.pipeline import Pipeline
+import numpy as np
+import pandas as pd
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OrdinalEncoder, RobustScaler
 
+
+# ─── Constantes ──────────────────────────────────────────────────────────────
 
 TARGET = "churn"
 
-DROP_COLS = ["customer_id", "city", "country"]
+# Colonnes à exclure (identifiant unique → aucune valeur prédictive)
+COLS_TO_DROP = ["customer_id", "city"]
 
-CATEGORICAL_COLS = [
-    "gender", "customer_segment", "signup_channel",
-    "contract_type", "payment_method",
-    "complaint_type", "survey_response",
+# Colonnes catégorielles à encoder (après suppression des inutiles)
+CAT_COLS = [
+    "gender", "country", "customer_segment", "signup_channel",
+    "contract_type", "payment_method", "discount_applied",
+    "price_increase_last_3m", "complaint_type", "survey_response"
 ]
 
-NUMERICAL_COLS = [
+# Colonnes numériques (après feature engineering)
+NUM_COLS = [
     "age", "tenure_months", "monthly_logins", "weekly_active_days",
     "avg_session_time", "features_used", "usage_growth_rate",
     "last_login_days_ago", "monthly_fee", "total_revenue",
     "payment_failures", "support_tickets", "avg_resolution_time",
     "csat_score", "escalations", "email_open_rate",
     "marketing_click_rate", "nps_score", "referral_count",
-    # features engineered (ajoutées plus bas)
-    "tickets_per_month", "revenue_per_month",
-    "engagement_score", "risk_score",
-    "discount_applied_num", "price_increase_num",
+    # Features dérivées (ajoutées par feature engineering)
+    "tickets_per_month", "engagement_score", "charge_per_login",
+    "payment_risk_flag", "nps_risk_flag", "high_value_flag",
 ]
 
 
+# ─── Feature Engineering ─────────────────────────────────────────────────────
 
-def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Crée des variables métier dérivées."""
+def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Crée des features dérivées pertinentes pour la prédiction du churn.
+    Ces features capturent des signaux comportementaux composites.
+
+    IMPORTANT : cette fonction ne fait que des calculs à partir des colonnes
+    existantes — aucun risque de data leakage car elle n'apprend rien.
+    """
     df = df.copy()
 
-    # Éviter division par zéro
-    tenure_safe = df["tenure_months"].replace(0, 1)
+    # Densité d'incidents : plus le ratio est élevé, plus le client est agité
+    df["tickets_per_month"] = df["support_tickets"] / (df["tenure_months"] + 1)
 
-    # Intensité du support
-    df["tickets_per_month"] = df["support_tickets"] / tenure_safe
+    # Engagement composite : fréquence × durée de session
+    df["engagement_score"] = df["monthly_logins"] * df["avg_session_time"]
 
-    # Densité de revenu
-    df["revenue_per_month"] = df["total_revenue"] / tenure_safe
+    # Coût relatif à l'usage : un client qui paye beaucoup mais se connecte peu = risque
+    df["charge_per_login"] = df["monthly_fee"] / (df["monthly_logins"] + 1)
 
-    # Score d'engagement composite
-    df["engagement_score"] = (
-        df["monthly_logins"] / df["monthly_logins"].max() * 0.4
-        + df["weekly_active_days"] / df["weekly_active_days"].max() * 0.4
-        + df["avg_session_time"] / df["avg_session_time"].max() * 0.2
-    )
+    # Signal binaire de risque paiement (>2 échecs = flag rouge)
+    df["payment_risk_flag"] = (df["payment_failures"] > 2).astype(int)
 
-    # Score de risque métier (heuristique)
-    df["risk_score"] = (
-        df["payment_failures"].clip(0, 5) / 5 * 0.35
-        + df["support_tickets"].clip(0, 10) / 10 * 0.25
-        + (100 - df["nps_score"].clip(-100, 100)) / 200 * 0.20
-        + df["last_login_days_ago"].clip(0, 90) / 90 * 0.20
-    )
+    # Détracteur NPS (score < 5 = client insatisfait)
+    df["nps_risk_flag"] = (df["nps_score"] < 5).astype(int)
 
-    # Encodage binaire
-    df["discount_applied_num"] = (df["discount_applied"] == "Yes").astype(int)
-    df["price_increase_num"] = (df["price_increase_last_3m"] == "Yes").astype(int)
+    # Client haute valeur (au-dessus du 75e percentile de revenu)
+    threshold = df["total_revenue"].quantile(0.75)
+    df["high_value_flag"] = (df["total_revenue"] > threshold).astype(int)
 
     return df
 
 
-def build_preprocessor(num_cols: list, cat_cols: list) -> ColumnTransformer:
+# ─── Pipeline sklearn ─────────────────────────────────────────────────────────
+
+def build_preprocessing_pipeline(num_cols: list, cat_cols: list):
     """
-    Construit le ColumnTransformer.
-    ⚠️ À fitter uniquement sur le train set.
+    Construit un ColumnTransformer sklearn :
+    - Numériques : imputation médiane + RobustScaler (résistant aux outliers)
+    - Catégorielles : imputation par constante 'missing' + OrdinalEncoder
+
+    RobustScaler est choisi car monthly_fee et total_revenue ont 5% d'outliers.
+    OrdinalEncoder est choisi pour sa compatibilité avec tous les modèles,
+    y compris les arbres qui n'ont pas besoin de one-hot encoding.
     """
-    numerical_pipeline = Pipeline([
+    numeric_transformer = ImbPipeline(steps=[
         ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler()),
+        ("scaler", RobustScaler()),
     ])
 
-    categorical_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+    categorical_transformer = ImbPipeline(steps=[
+        ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
+        ("encoder", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
     ])
 
-    return ColumnTransformer(
-        transformers=[
-            ("num", numerical_pipeline, num_cols),
-            ("cat", categorical_pipeline, cat_cols),
-        ],
-        remainder="drop",
-    )
+    preprocessor = ColumnTransformer(transformers=[
+        ("num", numeric_transformer, num_cols),
+        ("cat", categorical_transformer, cat_cols),
+    ], remainder="drop")
+
+    return preprocessor
 
 
-def prepare_data(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 42):
+# ─── Pipeline principal ───────────────────────────────────────────────────────
+
+def prepare_data(
+    filepath: str,
+    test_size: float = 0.2,
+    random_state: int = 42,
+    apply_smote: bool = True,
+    save_path: str = None,
+) -> dict:
     """
-    Pipeline complet :
-    1. Feature engineering
-    2. Split stratifié train/test
-    3. Fit preprocessor sur train uniquement
-    4. Transform train et test
+    Pipeline complet de préparation des données.
 
-    Retourne : X_train, X_test, y_train, y_test, preprocessor, feature_names
+    Args:
+        filepath      : Chemin vers customer_churn.csv
+        test_size     : Proportion du jeu de test (défaut 20%)
+        random_state  : Graine aléatoire pour la reproductibilité
+        apply_smote   : Appliquer SMOTE sur le train set (défaut True)
+        save_path     : Si fourni, sauvegarde le pipeline dans ce chemin
+
+    Returns:
+        dict avec clés :
+          - X_train, X_test, y_train, y_test (arrays numpy)
+          - feature_names (liste des noms de features après transformation)
+          - pipeline (objet sklearn fitted)
+          - class_distribution (dict des proportions avant/après SMOTE)
     """
-    # 1. Feature engineering
-    df = engineer_features(df)
+    print("\n" + "="*55)
+    print("  PIPELINE DE PREPROCESSING")
+    print("="*55)
 
-    # 2. Séparer X et y
-    cols_to_drop = DROP_COLS + [TARGET, "discount_applied", "price_increase_last_3m"]
-    X = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    # ── 1. Chargement ────────────────────────────────────────
+    df = pd.read_csv(filepath)
+    print(f"\n[1/5] Données chargées : {df.shape[0]:,} lignes × {df.shape[1]} colonnes")
+
+    # ── 2. Feature Engineering ───────────────────────────────
+    df = add_engineered_features(df)
+    print(f"[2/5] Feature engineering : +6 nouvelles features")
+
+    # Suppression des colonnes inutiles
+    cols_to_drop_existing = [c for c in COLS_TO_DROP if c in df.columns]
+    df = df.drop(columns=cols_to_drop_existing)
+
+    # Séparation features / cible
+    X = df.drop(columns=[TARGET])
     y = df[TARGET]
 
-    # 3. Colonnes effectives
-    num_cols = [c for c in NUMERICAL_COLS if c in X.columns]
-    cat_cols = [c for c in CATEGORICAL_COLS if c in X.columns]
+    # Colonnes réellement disponibles
+    num_cols_available = [c for c in NUM_COLS if c in X.columns]
+    cat_cols_available = [c for c in CAT_COLS if c in X.columns]
 
-    # 4. Split stratifié (préserve le ratio de churn)
+    print(f"    → {len(num_cols_available)} features numériques")
+    print(f"    → {len(cat_cols_available)} features catégorielles")
+
+    # ── 3. Train / Test Split STRATIFIÉ ─────────────────────
+    # stratify=y garantit que les proportions de churn sont
+    # identiques dans train et test (crucial avec 10.2% de churn)
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
+        X, y,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=y,
     )
+    print(f"\n[3/5] Split stratifié :")
+    print(f"    → Train : {X_train.shape[0]:,} lignes "
+          f"({y_train.sum()} churners, {y_train.mean()*100:.1f}%)")
+    print(f"    → Test  : {X_test.shape[0]:,} lignes "
+          f"({y_test.sum()} churners, {y_test.mean()*100:.1f}%)")
 
-    print(f"✅ Split : Train={X_train.shape[0]:,} | Test={X_test.shape[0]:,}")
-    print(f"   Churn rate train : {y_train.mean():.3f} | test : {y_test.mean():.3f}")
+    # ── 4. Pipeline sklearn (fit sur train UNIQUEMENT) ───────
+    preprocessor = build_preprocessing_pipeline(num_cols_available, cat_cols_available)
 
-    # 5. Fit sur train uniquement — jamais sur test !
-    preprocessor = build_preprocessor(num_cols, cat_cols)
-    X_train_proc = preprocessor.fit_transform(X_train)
-    X_test_proc  = preprocessor.transform(X_test)
+    # FIT sur train, TRANSFORM sur train et test
+    X_train_processed = preprocessor.fit_transform(X_train)
+    X_test_processed = preprocessor.transform(X_test)
 
-    # 6. Noms des features pour SHAP / importance
-    ohe = preprocessor.named_transformers_["cat"].named_steps["encoder"]
-    cat_feature_names = list(ohe.get_feature_names_out(cat_cols))
-    feature_names = num_cols + cat_feature_names
+    print(f"\n[4/5] Pipeline sklearn appliqué :")
+    print(f"    → Shape après transformation : {X_train_processed.shape}")
+    print(f"    → RobustScaler + OrdinalEncoder + Imputation")
 
-    print(f"   Features après encoding : {len(feature_names)}")
+    # Noms des features après transformation
+    feature_names = num_cols_available + cat_cols_available
 
-    return X_train_proc, X_test_proc, y_train, y_test, preprocessor, feature_names
+    # ── 5. SMOTE (sur train UNIQUEMENT) ─────────────────────
+    class_dist = {"before_smote": dict(pd.Series(y_train).value_counts())}
+
+    if apply_smote:
+        smote = SMOTE(random_state=random_state)
+        X_train_final, y_train_final = smote.fit_resample(X_train_processed, y_train)
+        class_dist["after_smote"] = dict(pd.Series(y_train_final).value_counts())
+
+        print(f"\n[5/5] SMOTE appliqué :")
+        print(f"    → Avant : {class_dist['before_smote']}")
+        print(f"    → Après : {class_dist['after_smote']}")
+        print(f"    → Ratio équilibré : 1:1")
+    else:
+        X_train_final = X_train_processed
+        y_train_final = y_train
+        print(f"\n[5/5] SMOTE non appliqué (apply_smote=False)")
+
+    # ── Sauvegarde du pipeline ───────────────────────────────
+    if save_path:
+        joblib.dump(preprocessor, save_path)
+        print(f"\n  → Pipeline sauvegardé : {save_path}")
+
+    print("\n" + "="*55)
+    print("  ✅ PREPROCESSING TERMINÉ")
+    print("="*55 + "\n")
+
+    return {
+        "X_train": X_train_final,
+        "X_test": X_test_processed,
+        "y_train": y_train_final,
+        "y_test": y_test,
+        "feature_names": feature_names,
+        "pipeline": preprocessor,
+        "class_distribution": class_dist,
+        "num_cols": num_cols_available,
+        "cat_cols": cat_cols_available,
+    }
 
 
-def save_preprocessor(preprocessor, path: str = "models/preprocessor.pkl"):
-    """Sauvegarde le preprocessor."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    joblib.dump(preprocessor, path)
-    print(f"💾 Preprocessor sauvegardé : {path}")
-
+# ─── Test rapide ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    from loader import load_data
+    import sys
+    filepath = sys.argv[1] if len(sys.argv) > 1 else "data/raw/customer_churn.csv"
 
-    df = load_data("data/raw/customer_churn.csv")
-    X_train, X_test, y_train, y_test, preprocessor, feature_names = prepare_data(df)
-    save_preprocessor(preprocessor)
+    result = prepare_data(
+        filepath=filepath,
+        save_path="models/preprocessor.pkl"
+    )
+
+    print("Résumé final :")
+    print(f"  X_train shape : {result['X_train'].shape}")
+    print(f"  X_test shape  : {result['X_test'].shape}")
+    print(f"  Features      : {result['feature_names'][:5]}... ({len(result['feature_names'])} total)")

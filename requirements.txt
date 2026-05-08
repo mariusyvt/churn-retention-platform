@@ -1,5 +1,30 @@
+# Jupyter
+notebook
+ipykernel
+
+# Data
 pandas
 numpy
-scikit-learn
-joblib
+scipy
+
+# Visualisation
 matplotlib
+seaborn
+plotly
+
+# Machine Learning
+scikit-learn
+xgboost
+imbalanced-learn
+shap
+joblib
+
+# API
+fastapi
+uvicorn[standard]
+pydantic
+
+# Dashboard
+streamlit
+requests
+
