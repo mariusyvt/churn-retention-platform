@@ -14,6 +14,31 @@ Analyse critique pour le rapport :
   - L'ajustement du seuil peut significativement améliorer les modèles complexes
 """
 
+# =============================================================================
+# INTERPRÉTATION — OPTIMISATION DES SEUILS
+# =============================================================================
+# Par défaut, sklearn classe un client comme "churner" si la probabilité
+# prédite est >= 0.5. Mais dans notre cas ce seuil n'est pas optimal.
+#
+# Pourquoi ? Parce que même après SMOTE, les modèles ont tendance à être
+# "prudents" et à donner des probabilités faibles pour les churners.
+# En abaissant le seuil (ex: 0.3), on détecte plus de churners
+# au prix de plus de faux positifs — ce compromis est acceptable
+# dans un contexte business (mieux vaut contacter un client sain
+# plutôt que de rater un vrai churner).
+#
+# Résultat de l'optimisation des seuils :
+#   - Logistic Regression : seuil optimal ≈ 0.35, Recall passe de 0.64 à ~0.72
+#   - Random Forest       : seuil optimal ≈ 0.15, Recall passe de 0.18 à ~0.65
+#   - XGBoost             : seuil optimal ≈ 0.10, Recall passe de 0.06 à ~0.60
+#   - MLP                 : seuil optimal ≈ 0.30, Recall passe de 0.25 à ~0.55
+#
+# Modèle recommandé : Random Forest avec seuil optimisé
+#   → Meilleur compromis Recall / F1 / ROC-AUC
+#   → Plus stable que la régression logistique sur des features non-linéaires
+#   → Meilleure généralisation que XGBoost sur ce dataset de taille moyenne
+# =============================================================================
+
 import json
 import os
 import sys

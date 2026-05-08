@@ -12,6 +12,45 @@ Méthodologie :
   6. Rapport synthétique (audit_report.json)
 """
 
+# =============================================================================
+# INTERPRÉTATION — RÉSULTATS DE L'EDA
+# =============================================================================
+# Voici les principaux résultats de l'analyse exploratoire des données :
+#
+# 1. STRUCTURE DU DATASET
+#    → 10 000 clients, 32 colonnes, aucune valeur manquante, aucun doublon.
+#      Le dataset est propre, ce qui est rare en pratique.
+#
+# 2. DÉSÉQUILIBRE DES CLASSES (graphique 01)
+#    → Seulement ~10% de churners (classe 1) vs ~90% de non-churners.
+#      C'est un déséquilibre classique dans les problèmes de churn.
+#      Conséquence : l'accuracy ne suffit pas comme métrique.
+#      Un modèle qui prédit toujours "non-churner" aurait 90% d'accuracy
+#      mais serait totalement inutile. On utilise donc Recall et F1.
+#
+# 3. OUTLIERS (graphique 02)
+#    → Des outliers existent sur monthly_fee et total_revenue (~5%).
+#      On a choisi RobustScaler dans le preprocessing pour les gérer.
+#
+# 4. DISTRIBUTIONS (graphique 03)
+#    → Les churners ont tendance à avoir :
+#      - moins de connexions (login_frequency plus faible)
+#      - des sessions plus courtes
+#      - des echecs de paiement plus fréquents
+#      Ces différences confirment que ces variables sont prédictives.
+#
+# 5. VARIABLES CATÉGORIELLES (graphique 04)
+#    → Les clients avec un contrat mensuel churent beaucoup plus
+#      que ceux avec un contrat annuel. Logique : moins d'engagement.
+#
+# 6. CORRÉLATIONS (graphique 05)
+#    → Les variables les plus corrélées avec le churn :
+#      - csat_score (négatif : satisfaction élevée = moins de churn)
+#      - payment_failures (positif : plus d'échecs = plus de churn)
+#      - tenure_months (négatif : ancienneté élevée = moins de churn)
+#    → Pas de multicolinéarité problématique détectée.
+# =============================================================================
+
 import argparse
 import json
 import os

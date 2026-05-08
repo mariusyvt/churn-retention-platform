@@ -14,6 +14,42 @@ Stratégie anti-déséquilibre :
   - Validation croisée stratifiée 5-fold sur le train set
 """
 
+# =============================================================================
+# INTERPRÉTATION — RÉSULTATS D'ENTRAÎNEMENT
+# =============================================================================
+# Après entraînement, on obtient les métriques suivantes sur le test set :
+#
+# Modèle               | Recall | F1    | ROC-AUC | CV Recall
+# ---------------------|--------|-------|---------|----------
+# Logistic Regression  |  0.642 | 0.297 |  0.735  |  0.716
+# Random Forest        |  0.176 | 0.210 |  0.785  |  0.922
+# XGBoost              |  0.059 | 0.103 |  0.780  |  0.897
+# MLP (Deep Learning)  |  0.245 | 0.232 |  0.653  |  0.971
+#
+# Ce qu'on remarque :
+#
+# → La Régression Logistique a le meilleur Recall sur le test (0.642).
+#   Elle détecte 64% des vrais churners, ce qui est la métrique la plus
+#   importante dans notre cas (on préfère avoir des faux positifs que
+#   rater des clients qui vont vraiment partir).
+#
+# → Random Forest et XGBoost ont un très bon CV Recall (~0.92) mais
+#   un Recall effondré sur le test (0.18 et 0.06).
+#   Cet écart énorme = overfitting. Le modèle a appris par cœur les
+#   données d'entraînement mais ne généralise pas bien.
+#   La cause probable : le seuil de décision par défaut (0.5) est
+#   trop élevé pour un problème déséquilibré → voir evaluator.py.
+#
+# → Le MLP souffre du même problème mais dans une moindre mesure.
+#   Son ROC-AUC de 0.653 est aussi le plus faible, ce qui montre
+#   que le Deep Learning n'est pas forcément supérieur sur des données
+#   tabulaires avec seulement 10 000 exemples.
+#
+# → Random Forest reste le meilleur choix global grâce à son
+#   ROC-AUC de 0.785 : il discrimine mieux entre churners et non-churners.
+#   Avec un seuil optimisé (étape 3), ses performances s'améliorent.
+# =============================================================================
+
 import json
 import os
 import sys

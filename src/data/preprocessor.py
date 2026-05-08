@@ -8,6 +8,34 @@ Principe anti-data-leakage :
   - Le test set est transformé (transform) mais jamais utilisé pour fit
 """
 
+# =============================================================================
+# INTERPRÉTATION — PREPROCESSING
+# =============================================================================
+# On commence par nettoyer et préparer les données avant d'entraîner les modèles.
+#
+# Quelques choix importants qu'on a faits :
+#
+# 1. RobustScaler plutôt que StandardScaler
+#    → On a des outliers sur certaines variables (monthly_fee, total_revenue).
+#      RobustScaler est moins sensible aux valeurs extrêmes car il utilise
+#      la médiane et l'IQR au lieu de la moyenne et l'écart-type.
+#
+# 2. Split stratifié (stratify=y)
+#    → Le dataset est très déséquilibré : seulement 10% de churners.
+#      Sans stratification, on risque de se retrouver avec trop peu de churners
+#      dans le test set, ce qui fausserait l'évaluation.
+#
+# 3. SMOTE uniquement sur le train set
+#    → SMOTE crée des exemples synthétiques pour équilibrer les classes.
+#      On ne l'applique QUE sur le train pour ne pas "tricher" sur le test.
+#      Après SMOTE : 50% churners / 50% non-churners dans le train.
+#
+# 4. Features dérivées (feature engineering)
+#    → On crée de nouvelles variables à partir des existantes pour capturer
+#      des signaux plus pertinents (ex: tickets_per_month, engagement_score).
+#      Ces variables ont été identifiées lors de l'EDA.
+# =============================================================================
+
 import joblib
 import numpy as np
 import pandas as pd

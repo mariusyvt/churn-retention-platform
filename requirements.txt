@@ -1,2 +1,30 @@
+# Jupyter
 notebook
 ipykernel
+
+# Data
+pandas
+numpy
+scipy
+
+# Visualisation
+matplotlib
+seaborn
+plotly
+
+# Machine Learning
+scikit-learn
+xgboost
+imbalanced-learn
+shap
+joblib
+
+# API
+fastapi
+uvicorn[standard]
+pydantic
+
+# Dashboard
+streamlit
+requests
+

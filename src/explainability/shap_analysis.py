@@ -14,6 +14,36 @@ Lectures :
   - Local  : pourquoi un client précis est classé "Churn"
 """
 
+# =============================================================================
+# INTERPRÉTATION — RÉSULTATS SHAP
+# =============================================================================
+# SHAP (SHapley Additive exPlanations) permet de comprendre les décisions
+# du modèle. Voici ce qu'on a observé :
+#
+# Top features par importance SHAP (sur le Random Forest) :
+#   1. csat_score        (0.0964) → La satisfaction client est la variable
+#                                    la plus prédictive du churn.
+#                                    Un client insatisfait part beaucoup plus.
+#   2. payment_failures  (0.0432) → Les échecs de paiement sont un signal
+#                                    fort : problème financier ou désengagement.
+#   3. tenure_months     (0.0335) → Les nouveaux clients (faible ancienneté)
+#                                    churent plus que les anciens.
+#   4. discount_applied  (0.0240) → Les remises réduisent le churn mais
+#                                    leur effet est limité sur le long terme.
+#   5. total_revenue     (0.0207) → Les clients à fort CA sont moins enclins
+#                                    à partir (plus investis dans le service).
+#
+# Ce qu'on retient :
+#   → Pour réduire le churn, il faut en priorité améliorer la satisfaction
+#     (csat_score) et surveiller les clients avec des échecs de paiement.
+#   → L'ancienneté protège contre le churn : fidéliser dès le départ est clé.
+#   → Les clients à fort revenu sont des "clients premium" à chouchouter.
+#
+# Lecture du graphique beeswarm :
+#   → Points rouges à droite = cette valeur élevée augmente le risque de churn
+#   → Points bleus à gauche  = cette valeur élevée réduit le risque de churn
+# =============================================================================
+
 import os
 import sys
 import warnings
